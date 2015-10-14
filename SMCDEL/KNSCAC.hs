@@ -109,6 +109,8 @@ announce kns@(KnS props lawbdd obs) ags psi = KnS newprops newlawbdd newobs wher
   newlawbdd = con lawbdd (imp (var k) (bddOf kns psi))
   newobs    = [(i, apply obs i ++ [proppsi | i `elem` ags]) | i <- map fst obs]
 
+
+-- this is the main function I need to change
 bddOf :: KnowStruct -> Form -> Bdd
 bddOf _   Top           = top
 bddOf _   Bot           = bot
