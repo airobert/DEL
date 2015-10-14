@@ -3,6 +3,7 @@ module DELLANG where
 import Data.List (nub,intercalate,(\\))
 import Data.Maybe (fromJust)
 import Test.QuickCheck
+import Control.Applicative
 
 data Prp = P Int  deriving (Eq,Ord,Show)
 instance Enum Prp where

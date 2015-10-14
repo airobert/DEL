@@ -9,8 +9,10 @@ a,b,c,d,e :: Agent
 a = Ag 0; b = Ag 1; c = Ag 2; d = Ag 3; e = Ag 4
 
 instance Show Agent where
-  show (Ag 0) = "a"; show (Ag 1) = "b"; 
-  show (Ag 2) = "c"; show (Ag 3) = "d" ; 
+  show (Ag 0) = "a"; 
+  show (Ag 1) = "b"; 
+  show (Ag 2) = "c"; 
+  show (Ag 3) = "d"; 
   show (Ag 4) = "e";  
   show (Ag n) = 'a': show n 
 
