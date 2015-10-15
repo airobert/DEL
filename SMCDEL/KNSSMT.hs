@@ -36,7 +36,7 @@ module KNSSMT where
   boolSMTOf p@(PrpF (P n))  = VarE (name n)
   boolSMTOf (Neg forms)    = NOT (boolSMTOf forms)
   boolSMTOf (Conj forms)  = AND (map boolSMTOf forms)
-  boolSMTOf (Disj forms)  = OR (map boolSMTOf forms)
+  boolSMTOf (Disj forms)  = OßR (map boolSMTOf forms)
   boolSMTOf (Xor [])      = false 
   boolSMTOf (Xor l)       = 
     let (b:bs) = map boolSMTOf l in 
@@ -97,6 +97,8 @@ module KNSSMT where
            otherwise -> error "SMT gives other replies"
 
 
+
+
   test_1 = 
     let p1 = PrpF (P 1) in 
     let p2 = PrpF (P 2) in 
@@ -109,12 +111,41 @@ module KNSSMT where
     if result then print "yes!"
       else (print "oh no!")
 
+
   -- instead of BDD, we introduce a new datastructure for (propsitional variables, clauses)
   type BddY = [Form]
 
   data KnowStructY = KnS [Prp] BddY [(Agent,[Prp])] deriving (Show)
   type KnState = [Prp]
   type ScenarioY = (KnowStructY, KnState)
+
+
+  smtEval :: [Prp] -> BddY -> KnState -> ExpY -> IO Bool 
+  smtEval props theta state ex = 
+    do yp@(Just hin, Just hout, Nothing, p) <- createYicesPipe yicesPath [] 
+      -- first, construct all the truth values as clauses
+       let values = vars truths
+       let values_declare = map ASSERT values
+       -- also need to test if values are in def
+       let props = propsInForm form 
+       let def = defs props 
+       let form_assert = [ASSERT (boolSMTOf form)]
+       --yp@(Just hin, Just hout, Nothing, p) <- createYicesPipe yicesPath []
+       runCmdsY yp (def ++ values_declare ++ form_assert) --
+       check <- checkY yp
+       print "-----def-------"
+       print def 
+       print "------values_declare----"
+       print values_declare 
+       print "-----form------"
+       print form_assert
+       return $
+         case check of 
+           Sat ss -> True
+           UnSat _ -> False
+           Unknown _ -> error "SMT gives an unknown as reply"
+           otherwise -> error "SMT gives other replies"
+
 
 
 
@@ -153,27 +184,62 @@ module KNSSMT where
   restrictState :: KnState -> [Prp] -> KnState
   restrictState s props = filter (`elem` props) s
 
+  statesOf :: KnowStruct -> [KnState]
+  statesOf (KnS props lawbdd _) = map (sort.translate) resultlists where
+    -- double coln: http://stackoverflow.com/questions/5926826/what-does-double-colon-stand-for-in-haskell
+    resultlists = map (map convToProp) $ allSatsWith (map (\(P n) -> n) props) lawbdd :: [[(Prp, Bool)]] -- type assignment list
+    convToProp (n,bool) = (P n,bool)
+    translate l = map fst (filter snd l)
 
-  eval :: ScenarioY -> Form -> Bool
-  eval _       Top           = True
-  eval _       Bot           = False
-  eval (_,s)   (PrpF p)      = p `elem` s
-  eval (kns,s) (Neg form)    = not $ eval (kns,s) form
-  eval (kns,s) (Conj forms)  = all (eval (kns,s)) forms
-  eval (kns,s) (Disj forms)  = any (eval (kns,s)) forms
-  eval (kns,s) (Xor  forms)  = odd $ length (filter id $ map (eval (kns,s)) forms)
-  eval scn     (Impl f g)    = not (eval scn f) || eval scn g
-  eval scn     (Equi f g)    = eval scn f == eval scn g
-  eval scn     (Forall ps f) = eval scn (foldl singleForall f ps) where
-    singleForall g p = Conj [ substit p Top g, substit p Bot g ]
-  eval scn     (Exists ps f) = eval scn (foldl singleExists f ps) where
-    singleExists g p = Disj [ substit p Top g, substit p Bot g ]
-  eval (kns@(KnS _ _ obs),s) (K i form) = all (\s' -> eval (kns,s') form) theres where
-    theres = filter (\s' ->  ((restrictState s' oi) := (restrictState s oi))) (statesOf kns)
-    oi = apply obs i
-  eval (kns,s) (PubAnnounce form1 form2) =
-    -- I didn't change this part
-    not (eval (kns, s) form1) || eval (pubAnnounce kns form1, s) form2
+  eval :: ScenarioY -> Form -> IO Bool
+  eval (kns@(KnS allprops lawbdd obs),s) Top             = True
+  eval (kns@(KnS allprops lawbdd obs),s) Bot             = False
+  eval (kns@(KnS allprops lawbdd obs),s) p@(PrpF p)      = p `elem` s
+  eval (kns@(KnS allprops lawbdd obs),s) p@(Neg form)    = smtEval allprops lawbdd s (bddOf kns p)
+  eval (kns@(KnS allprops lawbdd obs),s) p@(Conj forms)  = smtEval allprops lawbdd s (bddOf kns p)
+  eval (kns@(KnS allprops lawbdd obs),s) p@(Disj forms)  = smtEval allprops lawbdd s (bddOf kns p)
+  eval (kns@(KnS allprops lawbdd obs),s) p@(Xor  forms)  = smtEval allprops lawbdd s (bddOf kns p)
+  eval (kns@(KnS allprops lawbdd obs),s) p@(Impl f g)    = smtEval allprops lawbdd s (bddOf kns p)
+  eval (kns@(KnS allprops lawbdd obs),s) p@(Equi f g)    = smtEval allprops lawbdd s (bddOf kns p)
+  eval (kns@(KnS allprops lawbdd obs),s) p@(Forall ps f) = smtEval allprops lawbdd s (bddOf kns p)
+  eval (kns@(KnS allprops lawbdd obs),s) p@(Exists ps f) = smtEval allprops lawbdd s (bddOf kns p)
+  eval (kns@(KnS allprops lawbdd obs),s) p@(K i form)    = smtEval allprops lawbdd s (bddOf kns p)
+  eval (kns,s) (PubAnnounce form1 form2) = do
+    -- Do two evaluations 
+    anno <-(eval (kns, s) form1) 
+    if anno then 
+      anno2 <- (eval (pubAnnounce kns form1, s) form2)
+      if anno2 then 
+        return True
+        else return False 
+      else error "Announcing something false"
 
+
+
+  SMTEval :: ScenarioY -> Form -> IO Bool 
+  SMTEval truths form = 
+    do yp@(Just hin, Just hout, Nothing, p) <- createYicesPipe yicesPath [] 
+      -- first, construct all the truth values as clauses
+       let values = vars truths
+       let values_declare = map ASSERT values
+       -- also need to test if values are in def
+       let props = propsInForm form 
+       let def = defs props 
+       let form_assert = [ASSERT (boolSMTOf form)]
+       --yp@(Just hin, Just hout, Nothing, p) <- createYicesPipe yicesPath []
+       runCmdsY yp (def ++ values_declare ++ form_assert) --
+       check <- checkY yp
+       print "-----def-------"
+       print def 
+       print "------values_declare----"
+       print values_declare 
+       print "-----form------"
+       print form_assert
+       return $
+         case check of 
+           Sat ss -> True
+           UnSat _ -> False
+           Unknown _ -> error "SMT gives an unknown as reply"
+           otherwise -> error "SMT gives other replies"
 
 
