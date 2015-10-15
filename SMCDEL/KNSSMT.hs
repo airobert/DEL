@@ -1,6 +1,4 @@
 module KNSSMT where
-  --import Data.HasCacBDD hiding (Top,Bot)
-  --import Data.HasCacBDD.Visuals
   import Math.SMT.Yices.Parser
   import Math.SMT.Yices.Syntax
   import Math.SMT.Yices.Pipe
@@ -8,25 +6,14 @@ module KNSSMT where
   import Control.Monad
   import DELLANG
   import HELP (alleq,apply,rtc)
-  --import Data.List (sort,intercalate,(\\))
-  --import System.IO (hPutStr, hGetContents, hClose)
-  --import System.Process (runInteractiveCommand)
-  --import HELP (alleq,apply,rtc)
-
-  --import Data.List
-  --import Control.Monad
-  --import DELLANG
 
   -- you will need to change this path!
   yicesPath = "/Users/robertwhite/Projects/yices-1.0.40/bin/yices" -- your yices path
-
-
 
   int = VarT "int"
   nat = VarT "nat"
   bool = VarT "bool"
   real = VarT "real"
-
   true = LitB True
   false = LitB False
 
@@ -36,7 +23,7 @@ module KNSSMT where
   boolSMTOf p@(PrpF (P n))  = VarE (name n)
   boolSMTOf (Neg forms)    = NOT (boolSMTOf forms)
   boolSMTOf (Conj forms)  = AND (map boolSMTOf forms)
-  boolSMTOf (Disj forms)  = OßR (map boolSMTOf forms)
+  boolSMTOf (Disj forms)  = OR (map boolSMTOf forms)
   boolSMTOf (Xor [])      = false 
   boolSMTOf (Xor l)       = 
     let (b:bs) = map boolSMTOf l in 
@@ -96,9 +83,6 @@ module KNSSMT where
            Unknown _ -> error "SMT gives an unknown as reply"
            otherwise -> error "SMT gives other replies"
 
-
-
-
   test_1 = 
     let p1 = PrpF (P 1) in 
     let p2 = PrpF (P 2) in 
@@ -120,22 +104,23 @@ module KNSSMT where
   type ScenarioY = (KnowStructY, KnState)
 
 
-  smtEval :: [Prp] -> BddY -> KnState -> ExpY -> IO Bool 
-  smtEval props theta state ex = 
+  smtEval :: KnowStructY -> KnState -> Form -> IO Bool 
+  smtEval kns@(KnS allprops lawbdd obs) state form = 
     do yp@(Just hin, Just hout, Nothing, p) <- createYicesPipe yicesPath [] 
-       let def = defs props 
-       let form_assert = map (\x -> ASSERT (bddOf x)) theta
+       let def = defs allprops 
+       let form_assert = map (\x -> ASSERT (bddOf kns x)) lawbdd
        let state_assert = map ASSERT (vars state)
+       let ex = ASSERT $ bddOf kns form
        --yp@(Just hin, Just hout, Nothing, p) <- createYicesPipe yicesPath []
        runCmdsY yp (def ++ form_assert ++ state_assert) --
        print "-----def-------"
        print def 
        print "------form_assert----"
-       print values_declare 
+       print form_assert 
        print "-----state_assert------"
        print state_assert
        Sat ss <- checkY yp
-       runCmdsY yp (ex)
+       runCmdsY yp [ex]
        check <- checkY yp
        return $
          case check of 
@@ -172,72 +157,30 @@ module KNSSMT where
     newlawbdd = psi : (lawbdd)
 
 
-  -- | Restrict a given variable to a given value
-  restrict :: BddY -> (Int,Bool) -> BddY
-  restrict b (n,bit) = 
-    if bit then (VarE (name n)) : b
-      else (NOT (VarE (name n))) : b
-
-  -- intersection
-  restrictState :: KnState -> [Prp] -> KnState
-  restrictState s props = filter (`elem` props) s
-
-  statesOf :: KnowStruct -> [KnState]
-  statesOf (KnS props lawbdd _) = map (sort.translate) resultlists where
-    -- double coln: http://stackoverflow.com/questions/5926826/what-does-double-colon-stand-for-in-haskell
-    resultlists = map (map convToProp) $ allSatsWith (map (\(P n) -> n) props) lawbdd :: [[(Prp, Bool)]] -- type assignment list
-    convToProp (n,bool) = (P n,bool)
-    translate l = map fst (filter snd l)
-
   eval :: ScenarioY -> Form -> IO Bool
-  eval (kns@(KnS allprops lawbdd obs),s) Top             = True
-  eval (kns@(KnS allprops lawbdd obs),s) Bot             = False
-  eval (kns@(KnS allprops lawbdd obs),s) p@(PrpF p)      = p `elem` s
-  eval (kns@(KnS allprops lawbdd obs),s) p@(Neg form)    = smtEval allprops lawbdd s (bddOf kns p)
-  eval (kns@(KnS allprops lawbdd obs),s) p@(Conj forms)  = smtEval allprops lawbdd s (bddOf kns p)
-  eval (kns@(KnS allprops lawbdd obs),s) p@(Disj forms)  = smtEval allprops lawbdd s (bddOf kns p)
-  eval (kns@(KnS allprops lawbdd obs),s) p@(Xor  forms)  = smtEval allprops lawbdd s (bddOf kns p)
-  eval (kns@(KnS allprops lawbdd obs),s) p@(Impl f g)    = smtEval allprops lawbdd s (bddOf kns p)
-  eval (kns@(KnS allprops lawbdd obs),s) p@(Equi f g)    = smtEval allprops lawbdd s (bddOf kns p)
-  eval (kns@(KnS allprops lawbdd obs),s) p@(Forall ps f) = smtEval allprops lawbdd s (bddOf kns p)
-  eval (kns@(KnS allprops lawbdd obs),s) p@(Exists ps f) = smtEval allprops lawbdd s (bddOf kns p)
-  eval (kns@(KnS allprops lawbdd obs),s) p@(K i form)    = smtEval allprops lawbdd s (bddOf kns p)
+  eval (kns@(KnS allprops lawbdd obs),s) Top             = return True
+  eval (kns@(KnS allprops lawbdd obs),s) Bot             = return False
+  eval (kns@(KnS allprops lawbdd obs),s) (PrpF p)      = return $ p `elem` s
+  eval (kns@(KnS allprops lawbdd obs),s) p@(Neg form)    = smtEval kns s p
+  eval (kns@(KnS allprops lawbdd obs),s) p@(Conj forms)  = smtEval kns s p
+  eval (kns@(KnS allprops lawbdd obs),s) p@(Disj forms)  = smtEval kns s p
+  eval (kns@(KnS allprops lawbdd obs),s) p@(Xor  forms)  = smtEval kns s p
+  eval (kns@(KnS allprops lawbdd obs),s) p@(Impl f g)    = smtEval kns s p
+  eval (kns@(KnS allprops lawbdd obs),s) p@(Equi f g)    = smtEval kns s p
+  eval (kns@(KnS allprops lawbdd obs),s) p@(Forall ps f) = smtEval kns s p
+  eval (kns@(KnS allprops lawbdd obs),s) p@(Exists ps f) = smtEval kns s p
+  eval (kns@(KnS allprops lawbdd obs),s) p@(K i form)    = smtEval kns s p
   eval (kns,s) (PubAnnounce form1 form2) = do
     -- Do two evaluations 
     anno <-(eval (kns, s) form1) 
     if anno then 
-      anno2 <- (eval (pubAnnounce kns form1, s) form2)
-      if anno2 then 
-        return True
-        else return False 
+      do
+        anno2 <- (eval (pubAnnounce kns form1, s) form2)
+        if anno2 then 
+          return True
+          else return False 
       else error "Announcing something false"
 
 
-
-  SMTEval :: ScenarioY -> Form -> IO Bool 
-  SMTEval truths form = 
-    do yp@(Just hin, Just hout, Nothing, p) <- createYicesPipe yicesPath [] 
-      -- first, construct all the truth values as clauses
-       let values = vars truths
-       let values_declare = map ASSERT values
-       -- also need to test if values are in def
-       let props = propsInForm form 
-       let def = defs props 
-       let form_assert = [ASSERT (boolSMTOf form)]
-       --yp@(Just hin, Just hout, Nothing, p) <- createYicesPipe yicesPath []
-       runCmdsY yp (def ++ values_declare ++ form_assert) --
-       check <- checkY yp
-       print "-----def-------"
-       print def 
-       print "------values_declare----"
-       print values_declare 
-       print "-----form------"
-       print form_assert
-       return $
-         case check of 
-           Sat ss -> True
-           UnSat _ -> False
-           Unknown _ -> error "SMT gives an unknown as reply"
-           otherwise -> error "SMT gives other replies"
 
 
