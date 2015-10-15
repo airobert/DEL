@@ -158,7 +158,7 @@ module KNSSMT where
     let ps' = map (\(P x) -> (show x, bool)) ps in 
     FORALL ps' (bddOf kns f)
   bddOf kns@(KnS allprops lawbdd obs) (K i form) =
-    FORALL otherps (bddOf kns form) where
+    FORALL otherps $ (AND ((map (bddOf kns) lawbdd))) :=> (bddOf kns form) where
       otherps = map (\(P n) -> (name n, bool)) $ allprops \\ apply obs i
   bddOf kns (PubAnnounce form1 form2) = bddOf (pubAnnounceY kns form1) form2
 
