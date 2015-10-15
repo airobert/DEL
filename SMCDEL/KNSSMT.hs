@@ -123,22 +123,20 @@ module KNSSMT where
   smtEval :: [Prp] -> BddY -> KnState -> ExpY -> IO Bool 
   smtEval props theta state ex = 
     do yp@(Just hin, Just hout, Nothing, p) <- createYicesPipe yicesPath [] 
-      -- first, construct all the truth values as clauses
-       let values = vars truths
-       let values_declare = map ASSERT values
-       -- also need to test if values are in def
-       let props = propsInForm form 
        let def = defs props 
-       let form_assert = [ASSERT (boolSMTOf form)]
+       let form_assert = map (\x -> ASSERT (bddOf x)) theta
+       let state_assert = map ASSERT (vars state)
        --yp@(Just hin, Just hout, Nothing, p) <- createYicesPipe yicesPath []
-       runCmdsY yp (def ++ values_declare ++ form_assert) --
-       check <- checkY yp
+       runCmdsY yp (def ++ form_assert ++ state_assert) --
        print "-----def-------"
        print def 
-       print "------values_declare----"
+       print "------form_assert----"
        print values_declare 
-       print "-----form------"
-       print form_assert
+       print "-----state_assert------"
+       print state_assert
+       Sat ss <- checkY yp
+       runCmdsY yp (ex)
+       check <- checkY yp
        return $
          case check of 
            Sat ss -> True
