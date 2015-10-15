@@ -110,7 +110,7 @@ module KNSSMT where
       else (print "oh no!")
 
   -- instead of BDD, we introduce a new datastructure for (propsitional variables, clauses)
-  type BddY = [CmdY]
+  type BddY = [Form]
 
   data KnowStructY = KnS [Prp] BddY [(Agent,[Prp])] deriving (Show)
   type KnState = [Prp]
@@ -118,43 +118,62 @@ module KNSSMT where
 
 
 
--- this is the main function I need to change
-bddOf :: KnowStruct -> Form -> ExpY
-bddOf _   Top           = true
-bddOf _   Bot           = false
-bddOf _   p@(PrpF (P n))  = boolSMTOf p
-bddOf kns p@(Neg form)    = boolSMTOf p
-bddOf kns p@(Conj forms)  = boolSMTOf p
-bddOf kns p@(Disj forms)  = boolSMTOf p
-bddOf kns p@(Xor  forms)  = boolSMTOf p
-bddOf kns p@(Impl f g)    = boolSMTOf p
-bddOf kns p@(Equi f g)    = boolSMTOf p
-bddOf kns p@(Forall ps f) = boolSMTOf p
-bddOf kns p@(Exists ps f) = boolSMTOf p
-bddOf kns@(KnS allprops lawbdd obs) (K i form) =
-  FORALL otherps (bddOf kns form) where
-    otherps = map (\(P n) -> (name n, bool)) $ allprops \\ apply obs i
-    -- agent i knows wether ... I find this hard to understand. why do we introduce this?
-bddOf kns@(KnS allprops lawbdd obs) (Kw i form) =
-  OR [FORALL otherps (bddOf kns f)) | f <- [form, Neg form]] where
-    otherps = map (\(P n) -> (name n, bool)) $ allprops \\ apply obs i
----- common knowledge. that's the confusing part
---bddOf kns@(KnS allprops lawbdd obs) (Ck ags form) = gfp lambda where
---  lambda z = AND $ (bddOf kns form) : [ forallSet (otherps i) (imp lawbdd z) | i <- ags ]
---  otherps i = map (\(P n) -> n) $ allprops \\ apply obs i
-  -- 
---bddOf kns (Ckw ags form) = dis (bddOf kns (Ck ags form)) (bddOf kns (Ck ags (Neg form)))
-bddOf kns@(KnS props _ _) (Announce ags form1 form2) =
-  imp (bddOf kns form1) (restrict bdd2 (k,True)) where
-    bdd2  = bddOf (announce kns ags form1) form2
-    (P k) = freshp props
---bddOf kns@(KnS props _ _) (AnnounceW ags form1 form2) =
---  ifthenelse (bddOf kns form1) bdd2a bdd2b where
---    bdd2a = restrict (bddOf (announce kns ags form1) form2) (k,True)
---    bdd2b = restrict (bddOf (announce kns ags form1) form2) (k,False)
---    (P k) = freshp props
-bddOf kns (PubAnnounce form1 form2) = bddOf (pubAnnounce kns form1) form2
---bddOf kns (PubAnnounceW form1 form2) =
---  ifthenelse (bddOf kns form1) newform2a newform2b where
---    newform2a = bddOf (pubAnnounce kns form1) form2
---    newform2b = bddOf (pubAnnounce kns (Neg form1)) form2
+  -- this is the main function I need to change
+  bddOf :: KnowStructY -> Form -> ExpY
+  bddOf _   Top           = true
+  bddOf _   Bot           = false
+  bddOf _   p@(PrpF (P n))  = boolSMTOf p
+  bddOf kns p@(Neg form)    = boolSMTOf p
+  bddOf kns p@(Conj forms)  = boolSMTOf p
+  bddOf kns p@(Disj forms)  = boolSMTOf p
+  bddOf kns p@(Xor  forms)  = boolSMTOf p
+  bddOf kns p@(Impl f g)    = boolSMTOf p
+  bddOf kns p@(Equi f g)    = boolSMTOf p
+  bddOf kns p@(Forall ps f) = boolSMTOf p
+  bddOf kns p@(Exists ps f) = boolSMTOf p
+  bddOf kns@(KnS allprops lawbdd obs) (K i form) =
+    FORALL otherps (bddOf kns form) where
+      otherps = map (\(P n) -> (name n, bool)) $ allprops \\ apply obs i
+  bddOf kns (PubAnnounce form1 form2) = bddOf (pubAnnounce kns form1) form2
+
+
+  pubAnnounce :: KnowStructY -> Form -> KnowStructY
+  pubAnnounce kns@(KnS props lawbdd obs) psi = KnS props newlawbdd obs where
+    --newlawbdd = con lawbdd (bddOf kns psi)
+    newlawbdd = psi : (lawbdd)
+
+
+  -- | Restrict a given variable to a given value
+  restrict :: BddY -> (Int,Bool) -> BddY
+  restrict b (n,bit) = 
+    if bit then (VarE (name n)) : b
+      else (NOT (VarE (name n))) : b
+
+  -- intersection
+  restrictState :: KnState -> [Prp] -> KnState
+  restrictState s props = filter (`elem` props) s
+
+
+  eval :: ScenarioY -> Form -> Bool
+  eval _       Top           = True
+  eval _       Bot           = False
+  eval (_,s)   (PrpF p)      = p `elem` s
+  eval (kns,s) (Neg form)    = not $ eval (kns,s) form
+  eval (kns,s) (Conj forms)  = all (eval (kns,s)) forms
+  eval (kns,s) (Disj forms)  = any (eval (kns,s)) forms
+  eval (kns,s) (Xor  forms)  = odd $ length (filter id $ map (eval (kns,s)) forms)
+  eval scn     (Impl f g)    = not (eval scn f) || eval scn g
+  eval scn     (Equi f g)    = eval scn f == eval scn g
+  eval scn     (Forall ps f) = eval scn (foldl singleForall f ps) where
+    singleForall g p = Conj [ substit p Top g, substit p Bot g ]
+  eval scn     (Exists ps f) = eval scn (foldl singleExists f ps) where
+    singleExists g p = Disj [ substit p Top g, substit p Bot g ]
+  eval (kns@(KnS _ _ obs),s) (K i form) = all (\s' -> eval (kns,s') form) theres where
+    theres = filter (\s' ->  ((restrictState s' oi) := (restrictState s oi))) (statesOf kns)
+    oi = apply obs i
+  eval (kns,s) (PubAnnounce form1 form2) =
+    -- I didn't change this part
+    not (eval (kns, s) form1) || eval (pubAnnounce kns form1, s) form2
+
+
+
