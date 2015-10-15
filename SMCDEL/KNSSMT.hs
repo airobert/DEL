@@ -33,7 +33,7 @@ module KNSSMT where
   boolSMTOf :: Form -> ExpY
   boolSMTOf Top           = true
   boolSMTOf Bot           = false
-  boolSMTOf p@(PrpF (P n))  = VarE (show n)
+  boolSMTOf p@(PrpF (P n))  = VarE (name n)
   boolSMTOf (Neg forms)    = NOT (boolSMTOf forms)
   boolSMTOf (Conj forms)  = AND (map boolSMTOf forms)
   boolSMTOf (Disj forms)  = OR (map boolSMTOf forms)
@@ -138,24 +138,23 @@ bddOf kns@(KnS allprops lawbdd obs) (K i form) =
 bddOf kns@(KnS allprops lawbdd obs) (Kw i form) =
   OR [FORALL otherps (bddOf kns f)) | f <- [form, Neg form]] where
     otherps = map (\(P n) -> (name n, bool)) $ allprops \\ apply obs i
--- common knowledge. that's the confusing part
-bddOf kns@(KnS allprops lawbdd obs) (Ck ags form) = gfp lambda where
-  lambda z = AND $ (bddOf kns form) : [ forallSet (otherps i) (imp lawbdd z) | i <- ags ]
-  otherps i = map (\(P n) -> n) $ allprops \\ apply obs i
+---- common knowledge. that's the confusing part
+--bddOf kns@(KnS allprops lawbdd obs) (Ck ags form) = gfp lambda where
+--  lambda z = AND $ (bddOf kns form) : [ forallSet (otherps i) (imp lawbdd z) | i <- ags ]
+--  otherps i = map (\(P n) -> n) $ allprops \\ apply obs i
   -- 
-bddOf kns (Ckw ags form) = dis (bddOf kns (Ck ags form)) (bddOf kns (Ck ags (Neg form)))
+--bddOf kns (Ckw ags form) = dis (bddOf kns (Ck ags form)) (bddOf kns (Ck ags (Neg form)))
 bddOf kns@(KnS props _ _) (Announce ags form1 form2) =
   imp (bddOf kns form1) (restrict bdd2 (k,True)) where
     bdd2  = bddOf (announce kns ags form1) form2
     (P k) = freshp props
-bddOf kns@(KnS props _ _) (AnnounceW ags form1 form2) =
-  ifthenelse (bddOf kns form1) bdd2a bdd2b where
-    bdd2a = restrict (bddOf (announce kns ags form1) form2) (k,True)
-    bdd2b = restrict (bddOf (announce kns ags form1) form2) (k,False)
-    (P k) = freshp props
-bddOf kns (PubAnnounce form1 form2) = imp (bddOf kns form1) newform2 where
-    newform2 = bddOf (pubAnnounce kns form1) form2
-bddOf kns (PubAnnounceW form1 form2) =
-  ifthenelse (bddOf kns form1) newform2a newform2b where
-    newform2a = bddOf (pubAnnounce kns form1) form2
-    newform2b = bddOf (pubAnnounce kns (Neg form1)) form2
+--bddOf kns@(KnS props _ _) (AnnounceW ags form1 form2) =
+--  ifthenelse (bddOf kns form1) bdd2a bdd2b where
+--    bdd2a = restrict (bddOf (announce kns ags form1) form2) (k,True)
+--    bdd2b = restrict (bddOf (announce kns ags form1) form2) (k,False)
+--    (P k) = freshp props
+bddOf kns (PubAnnounce form1 form2) = bddOf (pubAnnounce kns form1) form2
+--bddOf kns (PubAnnounceW form1 form2) =
+--  ifthenelse (bddOf kns form1) newform2a newform2b where
+--    newform2a = bddOf (pubAnnounce kns form1) form2
+--    newform2b = bddOf (pubAnnounce kns (Neg form1)) form2
