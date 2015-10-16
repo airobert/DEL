@@ -1,3 +1,5 @@
+This is a mini project within the course Functional Specification of Algorithms in UvA. 
+
 Install Yices following https://github.com/airobert/yices_haskell
 
 Install SMCDEL and go to file SMCDEL/KNSSMT.hs and report.pdf
