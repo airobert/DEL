@@ -1,0 +1,5 @@
+Install Yices following https://github.com/airobert/yices_haskell
+
+Install SMCDEL and go to file SMCDEL/KNSSMT.hs and report.pdf
+
+-- Rober White, ILLC, UvA

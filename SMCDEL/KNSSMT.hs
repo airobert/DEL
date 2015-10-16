@@ -1,3 +1,7 @@
+-- To run, simply type test_i where 0 < i < 9.
+-- See the report.pdf file for more description.
+-- Rober White, ILLC, UvA
+
 module KNSSMT where
   import Math.SMT.Yices.Parser
   import Math.SMT.Yices.Syntax
@@ -17,30 +21,30 @@ module KNSSMT where
   true = LitB True
   false = LitB False
 
- -- boolSMTOf :: Form -> ExpY
- -- boolSMTOf Top           = true
- -- boolSMTOf Bot           = false
- -- boolSMTOf p@(PrpF (P n))  = VarE (name n)
- -- boolSMTOf (Neg forms)    = NOT (boolSMTOf forms)
- -- boolSMTOf (Conj forms)  = AND (map boolSMTOf forms)
- -- boolSMTOf (Disj forms)  = OR (map boolSMTOf forms)
- -- boolSMTOf (Xor [])      = false 
- -- boolSMTOf (Xor l)       = 
- --   let (b:bs) = map boolSMTOf l in 
- --   foldl myxor b bs
- --   where 
- --     myxor :: ExpY -> ExpY -> ExpY
- --     myxor s t  = (AND[OR[s, t], NOT (AND [s, t])])
- ----  can we translate this as not equal ?
- -- boolSMTOf (Impl p1 p2)    = (boolSMTOf p1) :=> (boolSMTOf p2)
- -- boolSMTOf (Equi p1 p2)    = (boolSMTOf p1) :=  (boolSMTOf p2)
- -- boolSMTOf (Forall ps f) = 
- --   let ps' = map (\(P x) -> (show x, bool)) ps in 
- --   FORALL ps' (boolSMTOf f)
- -- boolSMTOf (Exists ps f) = 
- --   let ps' = map (\(P x) -> (show x, bool)) ps in 
- --   FORALL ps' (boolSMTOf f)
- -- boolSMTOf _             = error "boolSMTOf failed: Not a boolean formula."
+  boolSMTOf :: Form -> ExpY
+  boolSMTOf Top           = true
+  boolSMTOf Bot           = false
+  boolSMTOf p@(PrpF (P n))  = VarE (name n)
+  boolSMTOf (Neg forms)    = NOT (boolSMTOf forms)
+  boolSMTOf (Conj forms)  = AND (map boolSMTOf forms)
+  boolSMTOf (Disj forms)  = OR (map boolSMTOf forms)
+  boolSMTOf (Xor [])      = false 
+  boolSMTOf (Xor l)       = 
+    let (b:bs) = map boolSMTOf l in 
+    foldl myxor b bs
+    where 
+      myxor :: ExpY -> ExpY -> ExpY
+      myxor s t  = (AND[OR[s, t], NOT (AND [s, t])])
+ --  can we translate this as not equal ?
+  boolSMTOf (Impl p1 p2)    = (boolSMTOf p1) :=> (boolSMTOf p2)
+  boolSMTOf (Equi p1 p2)    = (boolSMTOf p1) :=  (boolSMTOf p2)
+  boolSMTOf (Forall ps f) = 
+    let ps' = map (\(P x) -> (show x, bool)) ps in 
+    FORALL ps' (boolSMTOf f)
+  boolSMTOf (Exists ps f) = 
+    let ps' = map (\(P x) -> (show x, bool)) ps in 
+    FORALL ps' (boolSMTOf f)
+  boolSMTOf _             = error "boolSMTOf failed: Not a boolean formula."
 
 -- not that the boolEval in SMCDEL is then going to be a call to Yices with assignment given
 -- declaration from Prp to CmdY
@@ -57,43 +61,43 @@ module KNSSMT where
     map (\(P i) -> VarE (name i)) sl
 
 
-  --boolEval :: [Prp] -> Form -> IO Bool 
-  --boolEval truths form = 
-  --  do yp@(Just hin, Just hout, Nothing, p) <- createYicesPipe yicesPath [] 
-  --    -- first, construct all the truth values as clauses
-  --     let values = vars truths
-  --     let values_declare = map ASSERT values
-  --     -- also need to test if values are in def
-  --     let props = propsInForm form 
-  --     let def = defs props 
-  --     let form_assert = [ASSERT (boolSMTOf form)]
-  --     --yp@(Just hin, Just hout, Nothing, p) <- createYicesPipe yicesPath []
-  --     runCmdsY yp (def ++ values_declare ++ form_assert) --
-  --     check <- checkY yp
-  --     print "-----def-------"
-  --     print def 
-  --     print "------values_declare----"
-  --     print values_declare 
-  --     print "-----form------"
-  --     print form_assert
-  --     return $
-  --       case check of 
-  --         Sat ss -> True
-  --         UnSat _ -> False
-  --         Unknown _ -> error "SMT gives an unknown as reply"
-  --         otherwise -> error "SMT gives other replies"
+  boolEval :: [Prp] -> Form -> IO Bool 
+  boolEval truths form = 
+    do yp@(Just hin, Just hout, Nothing, p) <- createYicesPipe yicesPath [] 
+      -- first, construct all the truth values as clauses
+       let values = vars truths
+       let values_declare = map ASSERT values
+       -- also need to test if values are in def
+       let props = propsInForm form 
+       let def = defs props 
+       let form_assert = [ASSERT (boolSMTOf form)]
+       --yp@(Just hin, Just hout, Nothing, p) <- createYicesPipe yicesPath []
+       runCmdsY yp (def ++ values_declare ++ form_assert) --
+       check <- checkY yp
+       print "-----def-------"
+       print def 
+       print "------values_declare----"
+       print values_declare 
+       print "-----form------"
+       print form_assert
+       return $
+         case check of 
+           Sat ss -> True
+           UnSat _ -> False
+           Unknown _ -> error "SMT gives an unknown as reply"
+           otherwise -> error "SMT gives other replies"
 
-  --test_1 = 
-  --  let p1 = PrpF (P 1) in 
-  --  let p2 = PrpF (P 2) in 
-  --  let p = Conj [p1, p2] in 
-  --  let q = Impl p p2 in 
-  --  q
+  ex_1 = 
+    let p1 = PrpF (P 1) in 
+    let p2 = PrpF (P 2) in 
+    let p = Conj [p1, p2] in 
+    let q = Impl p p2 in 
+    q
 
-  --test_truth = do 
-  --  result <- (boolEval [P 1, P 2] test_1)
-  --  if result then print "yes!"
-  --    else (print "oh no!")
+  test_truth = do 
+    result <- (boolEval [P 1, P 2] ex_1)
+    if result then print "yes! Boolean formulas passed test!"
+      else (print "oh no! It failed!")
 
 
   -- instead of BDD, we introduce a new datastructure for (propsitional variables, clauses)
@@ -237,6 +241,7 @@ module KNSSMT where
   -- this test passed !
   test_6 = eval myMud3 no3
 
+  
   at_least :: Int -> Form
   at_least n = Disj (map PrpF [P 1 .. P n])
 
